@@ -14,7 +14,7 @@ import "react-toastify/dist/ReactToastify.css";
 
 const CourseList: React.FC = () => {
   const dispatch = useDispatch<AppDispatch>();
-  const courses = useSelector((state: RootState) => state.courses.courses);
+  const courses = useSelector((state: RootState) => state.courses.courses || []);
   const status = useSelector((state: RootState) => state.courses.status);
   const error = useSelector((state: RootState) => state.courses.error);
 

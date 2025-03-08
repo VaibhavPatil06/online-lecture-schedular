@@ -2,17 +2,17 @@ import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import axios from 'axios';
 import { Instructor } from '../types';
 
-const API_URL = 'http://localhost:5000/api/instructors';
+const API_URL = 'http://localhost:5000/api/v1/admin';
 
 // Fetch Instructors
 export const fetchInstructors = createAsyncThunk('instructors/fetchInstructors', async () => {
-  const response = await axios.get(API_URL);
-  return response.data;
+  const response = await axios.get(`${import.meta.env.VITE_BACKEND_URL}/api/v1/admin/get-instructors`);
+  return response.data.data;
 });
 
 // Add Instructor
 export const addInstructor = createAsyncThunk('instructors/addInstructor', async (instructor: Instructor) => {
-  const response = await axios.post(API_URL, instructor);
+  const response = await axios.post(`${import.meta.env.VITE_BACKEND_URL}/api/v1/admin/register-instructors`, instructor);
   return response.data;
 });
 

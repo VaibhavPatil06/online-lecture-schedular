@@ -170,3 +170,33 @@ export const logout = async (req, res) => {
     return;
   }
 };
+
+
+export const getInstructors = async (req, res) => {
+  try {
+    // Query the database for users with the role of "instructor"
+    const instructors = await UserModel.find({ role: "instructor" }).select(
+      "-password -cookie" // Exclude sensitive fields
+    );
+
+    // If no instructors are found, return a 404 response
+    if (!instructors || instructors.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "No instructors found",
+      });
+    }
+
+    // Return the list of instructors
+    res.status(200).json({
+      success: true,
+      data: instructors,
+    });
+  } catch (error) {
+    console.error("Error fetching instructors:", error);
+    res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
+  }
+};

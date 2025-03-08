@@ -1,27 +1,31 @@
 import React, { useState, useEffect } from "react";
 import { useSelector, useDispatch } from "react-redux";
-import { Plus, Calendar, Clock, Trash2 } from "lucide-react";
+import { Plus, Calendar, Clock, Trash2, Edit } from "lucide-react";
 import { RootState, AppDispatch } from "../../store";
 import {
   fetchLectures,
   addLecture,
+  updateLecture,
   removeLecture,
 } from "../../store/lecturesSlice";
 import type { Lecture } from "../../types";
 import { ToastContainer, toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
+import { fetchCourses } from "../../store/coursesSlice";
+import { fetchInstructors } from "../../store/instructorsSlice";
 
 const LectureSchedule: React.FC = () => {
   const dispatch = useDispatch<AppDispatch>();
   const lectures = useSelector((state: RootState) => state.lectures.lectures);
   const status = useSelector((state: RootState) => state.lectures.status);
   const error = useSelector((state: RootState) => state.lectures.error);
-  const courses = useSelector((state: RootState) => state.courses.courses);
+  const courses = useSelector((state: RootState) => state.courses.courses || []);
   const instructors = useSelector(
-    (state: RootState) => state.instructors.instructors
+    (state: RootState) => state.instructors || []
   );
 
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingLecture, setEditingLecture] = useState<Lecture | null>(null);
   const [formData, setFormData] = useState<Omit<Lecture, "id">>({
     courseId: "",
     instructorId: "",
@@ -30,49 +34,52 @@ const LectureSchedule: React.FC = () => {
     startTime: "",
     endTime: "",
   });
+  const [errors, setErrors] = useState<{ [key: string]: string }>({});
 
   useEffect(() => {
     if (status === "idle") {
       dispatch(fetchLectures());
+      dispatch(fetchCourses());
+      dispatch(fetchInstructors());
     }
   }, [status, dispatch]);
 
-  const selectedCourse = courses.find((c) => c.id === formData.courseId);
+  const selectedCourse = Array.isArray(courses)
+    ? courses.find((c) => c._id === formData.courseId)
+    : null;
+
+  const validateForm = () => {
+    const newErrors: { [key: string]: string } = {};
+
+    if (!formData.courseId) newErrors.courseId = "Course is required";
+    if (!formData.instructorId)
+      newErrors.instructorId = "Instructor is required";
+    if (!formData.date) newErrors.date = "Date is required";
+    if (!formData.startTime) newErrors.startTime = "Start time is required";
+    if (!formData.endTime) newErrors.endTime = "End time is required";
+    if (formData.startTime >= formData.endTime)
+      newErrors.endTime = "End time must be after start time";
+
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-
-    // Check for scheduling conflicts
-    const hasConflict = lectures.some((lecture) => {
-      if (
-        lecture.instructorId === formData.instructorId &&
-        lecture.date === formData.date
-      ) {
-        const newStart = new Date(`${formData.date}T${formData.startTime}`);
-        const newEnd = new Date(`${formData.date}T${formData.endTime}`);
-        const existingStart = new Date(`${lecture.date}T${lecture.startTime}`);
-        const existingEnd = new Date(`${lecture.date}T${lecture.endTime}`);
-
-        return (
-          (newStart >= existingStart && newStart < existingEnd) ||
-          (newEnd > existingStart && newEnd <= existingEnd) ||
-          (newStart <= existingStart && newEnd >= existingEnd)
-        );
-      }
-      return false;
-    });
-
-    if (hasConflict) {
-      toast.error(
-        "This instructor already has a lecture scheduled during this time slot."
-      );
-      return;
-    }
+    if (!validateForm()) return;
 
     try {
-      await dispatch(addLecture(formData)).unwrap();
-      toast.success("Lecture scheduled successfully!");
+      if (editingLecture) {
+        await dispatch(
+          updateLecture({ id: editingLecture.id, ...formData })
+        ).unwrap();
+        toast.success("Lecture updated successfully!");
+      } else {
+        await dispatch(addLecture(formData)).unwrap();
+        toast.success("Lecture scheduled successfully!");
+      }
       setIsModalOpen(false);
+      setEditingLecture(null);
       setFormData({
         courseId: "",
         instructorId: "",
@@ -82,7 +89,9 @@ const LectureSchedule: React.FC = () => {
         endTime: "",
       });
     } catch (error) {
-      toast.error("An error occurred while scheduling the lecture.");
+      toast.error(
+        error.message || "An error occurred while scheduling the lecture."
+      );
     }
   };
 
@@ -95,6 +104,19 @@ const LectureSchedule: React.FC = () => {
         toast.error("An error occurred while deleting the lecture.");
       }
     }
+  };
+
+  const openEditModal = (lecture: Lecture) => {
+    setEditingLecture(lecture);
+    setFormData({
+      courseId: lecture.courseId,
+      instructorId: lecture.instructorId,
+      batchId: lecture.batchId,
+      date: lecture.date,
+      startTime: lecture.startTime,
+      endTime: lecture.endTime,
+    });
+    setIsModalOpen(true);
   };
 
   const groupedLectures = (Array.isArray(lectures) ? lectures : []).reduce(
@@ -146,10 +168,12 @@ const LectureSchedule: React.FC = () => {
             </h2>
             <div className="space-y-4">
               {groupedLectures[date].map((lecture) => {
-                const course = courses.find((c) => c.id === lecture.courseId);
-                const instructor = instructors.find(
-                  (i) => i.id === lecture.instructorId
-                );
+                const course = Array.isArray(courses)
+                  ? courses.find((c) => c._id === lecture.courseId)
+                  : null;
+                const instructor = Array.isArray(instructors)
+                  ? instructors.find((i) => i.id === lecture.instructorId)
+                  : null;
                 const batch = course?.batches.find(
                   (b) => b.id === lecture.batchId
                 );
@@ -168,7 +192,7 @@ const LectureSchedule: React.FC = () => {
                           {course?.name}
                         </h3>
                         <p className="text-sm text-gray-600">
-                          {instructor?.name}
+                          {instructor?.fullName}
                         </p>
                         <p className="text-sm text-gray-500">{batch?.name}</p>
                       </div>
@@ -180,6 +204,12 @@ const LectureSchedule: React.FC = () => {
                           {lecture.startTime} - {lecture.endTime}
                         </span>
                       </div>
+                      <button
+                        onClick={() => openEditModal(lecture)}
+                        className="p-2 text-gray-400 hover:text-indigo-600 transition-colors"
+                      >
+                        <Edit className="w-4 h-4" />
+                      </button>
                       <button
                         onClick={() => handleDeleteLecture(lecture.id)}
                         className="p-2 text-gray-400 hover:text-red-600 transition-colors"
@@ -197,9 +227,9 @@ const LectureSchedule: React.FC = () => {
 
       {isModalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="card w-full max-w-md">
+          <div className="card w-full max-w-md bg-white p-6 rounded-lg shadow-lg">
             <h2 className="text-xl font-semibold text-gray-900 mb-4">
-              Schedule New Lecture
+              {editingLecture ? "Edit Lecture" : "Schedule New Lecture"}
             </h2>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
@@ -219,12 +249,15 @@ const LectureSchedule: React.FC = () => {
                   required
                 >
                   <option value="">Select Course</option>
-                  {courses.map((course) => (
-                    <option key={course.id} value={course.id}>
+                  {courses.courses.map((course) => (
+                    <option key={course._id} value={course._id}>
                       {course.name}
                     </option>
                   ))}
                 </select>
+                {errors.courseId && (
+                  <p className="text-red-500 text-sm mt-1">{errors.courseId}</p>
+                )}
               </div>
 
               {selectedCourse && (
@@ -263,12 +296,17 @@ const LectureSchedule: React.FC = () => {
                   required
                 >
                   <option value="">Select Instructor</option>
-                  {instructors?.map((instructor) => (
+                  {instructors.map((instructor) => (
                     <option key={instructor.id} value={instructor.id}>
-                      {instructor.name}
+                      {instructor.fullName}
                     </option>
                   ))}
                 </select>
+                {errors.instructorId && (
+                  <p className="text-red-500 text-sm mt-1">
+                    {errors.instructorId}
+                  </p>
+                )}
               </div>
 
               <div>
@@ -284,6 +322,9 @@ const LectureSchedule: React.FC = () => {
                   className="input-field"
                   required
                 />
+                {errors.date && (
+                  <p className="text-red-500 text-sm mt-1">{errors.date}</p>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-4">
@@ -300,6 +341,11 @@ const LectureSchedule: React.FC = () => {
                     className="input-field"
                     required
                   />
+                  {errors.startTime && (
+                    <p className="text-red-500 text-sm mt-1">
+                      {errors.startTime}
+                    </p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -314,6 +360,11 @@ const LectureSchedule: React.FC = () => {
                     className="input-field"
                     required
                   />
+                  {errors.endTime && (
+                    <p className="text-red-500 text-sm mt-1">
+                      {errors.endTime}
+                    </p>
+                  )}
                 </div>
               </div>
 
@@ -322,6 +373,7 @@ const LectureSchedule: React.FC = () => {
                   type="button"
                   onClick={() => {
                     setIsModalOpen(false);
+                    setEditingLecture(null);
                     setFormData({
                       courseId: "",
                       instructorId: "",
@@ -336,7 +388,7 @@ const LectureSchedule: React.FC = () => {
                   Cancel
                 </button>
                 <button type="submit" className="btn-primary">
-                  Schedule Lecture
+                  {editingLecture ? "Update" : "Schedule"} Lecture
                 </button>
               </div>
             </form>
